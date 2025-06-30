@@ -2,6 +2,6 @@
 
 public interface ITransportProvider
 {
-    Task<TResponse> SendRequest<TResponse>(string name, IRequest<TResponse> request, CancellationToken cancellationToken);
-    Task SendMessage(string name, IMessage message, CancellationToken cancellationToken);
+    Task<string> SendRequest(string name, string request, CancellationToken cancellationToken);
+    Task SendMessage(string name, string message, CancellationToken cancellationToken);
 }

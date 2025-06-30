@@ -1,4 +1,5 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
+using System.Text.Json;
 
 namespace Messenger;
 
@@ -9,13 +10,49 @@ public interface ISender
     public Task Send(IMessage message, CancellationToken cancellationToken = default);
 }
 
-public class Messenger : ISender
+public interface IRouter
+{
+    public Task<string?> Receive(string name, string data, CancellationToken cancellationToken);
+}
+
+public class Messenger : ISender, IRouter
 {
     private readonly MessageConfiguration _configuration;
 
     public Messenger(MessageConfiguration configuration)
     {
         _configuration = configuration;
+    }
+
+    public async Task<string?> Receive(string messagingName, string data, CancellationToken cancellationToken)
+    {
+        var type = _configuration.GetRequestType(messagingName);
+
+        if (type is null)
+        {
+            throw new MessagingException($"No handler setup for {messagingName}");
+        }
+
+        var inBoundData = JsonSerializer.Deserialize(data, type);
+
+        if (inBoundData is null)
+        {
+            throw new MessagingException("Failure to deserialise inbound message");
+        }
+
+        if (_configuration.GetHandler(messagingName) is IRequestHandlerWrapper requestHandler)
+        {
+            var response = await requestHandler.Handle(inBoundData, cancellationToken);
+            return JsonSerializer.Serialize(response);
+        }
+
+        if (_configuration.GetHandler(messagingName) is IMessageHandlerWrapper messageHandler)
+        {
+            await messageHandler.Handle(inBoundData, cancellationToken);
+            return null;
+        }
+
+        throw new MessagingException($"No handler setup for {messagingName}");
     }
 
     public async Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
@@ -25,7 +62,9 @@ public class Messenger : ISender
 
         if (provider is not null)
         {
-            return await provider.SendRequest(messagingName, request, cancellationToken);
+            var requestData = JsonSerializer.Serialize(request, request.GetType());
+            var responseData = await provider.SendRequest(messagingName, requestData, cancellationToken);
+            return JsonSerializer.Deserialize<TResponse>(responseData)!;
         }
 
         if (_configuration.GetHandler(messagingName) is IRequestHandlerWrapper handler)
@@ -43,7 +82,9 @@ public class Messenger : ISender
 
         if (provider is not null)
         {
-            await provider.SendMessage(messagingName, message, cancellationToken);
+            var messageData = JsonSerializer.Serialize(message, message.GetType());
+            await provider.SendMessage(messagingName, messageData, cancellationToken);
+            return;
         }
 
         if (_configuration.GetHandler(messagingName) is IMessageHandlerWrapper handler)
@@ -59,7 +100,7 @@ public class Messenger : ISender
 public class MessageConfiguration
 {
     private Dictionary<string, Type> _handlers = [];
-    private Dictionary<string, ITransportProvider> _transportConfig = [];
+    private Dictionary<string, Type> _transportConfig = [];
     private readonly IServiceProvider _serviceProvider;
 
     public MessageConfiguration(IServiceProvider serviceProvider)
@@ -91,7 +132,12 @@ public class MessageConfiguration
 
     internal ITransportProvider? GetTransport(string messagingName)
     {
-        return _transportConfig.GetValueOrDefault(messagingName);
+        if (_transportConfig.TryGetValue(messagingName, out var type))
+        {
+            return (ITransportProvider?)ActivatorUtilities.CreateInstance(_serviceProvider, type);
+        }
+
+        return null;
     }
 
     internal object? GetHandler(string messagingName)
@@ -104,13 +150,24 @@ public class MessageConfiguration
         return null;
     }
 
-    public MessageConfiguration WithTransport(ITransportProvider transport, Type[] requestTypes)
+    public MessageConfiguration WithTransport<TTransportProvider>(params Type[] requestTypes)
+        where TTransportProvider : ITransportProvider
     {
         foreach (var item in requestTypes)
         {
-            _transportConfig[MessageNameAttribute.GetMessagingName(item)] = transport;
+            _transportConfig[MessageNameAttribute.GetMessagingName(item)] = typeof(TTransportProvider);
         }
 
         return this;
+    }
+
+    internal Type? GetRequestType(string name)
+    {
+        if (_handlers.TryGetValue(name, out var handlerType))
+        {
+            return handlerType.GenericTypeArguments[0];
+        }
+
+        return null;
     }
 }
