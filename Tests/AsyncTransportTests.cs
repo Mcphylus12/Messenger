@@ -10,10 +10,9 @@ public class AsyncTransportTests
     public AsyncTransportTests()
     {
         _testState = new TestState();
-        var transportDummy = new AsyncTransportDummy();
 
         var _outboundServices = new ServiceCollection()
-            .AddSingleton(transportDummy)
+            .AddSingleton<AsyncTransportDummy>()
             .AddMessenger(o => o.WithTransport<TestAsyncTransport>(typeof(TestRequest), typeof(TestMessage)))
             .BuildServiceProvider();
         _outBoundMessenger = _outboundServices.GetRequiredService<ISender>();
@@ -24,6 +23,7 @@ public class AsyncTransportTests
             .BuildServiceProvider();
         var inBoundMessenger = _inboundServices.GetRequiredService<IRouter>();
 
+        var transportDummy = _outboundServices.GetRequiredService<AsyncTransportDummy>();
         transportDummy.OnReceive = inBoundMessenger.Receive;
     }
 
@@ -39,43 +39,38 @@ public class AsyncTransportTests
     }
 }
 
-public class TestAsyncTransport : AsyncTransportProvider
+public class TestAsyncTransport : IAsyncRequestForwarder
 {
     private readonly AsyncTransportDummy _asyncTransportDummy;
 
-    public TestAsyncTransport(AsyncTransportDummy asyncTransportDummy, AsyncRequestTracker asyncRequestTracker)
-        : base(asyncRequestTracker)
+    public TestAsyncTransport(AsyncTransportDummy asyncTransportDummy)
     {
         _asyncTransportDummy = asyncTransportDummy;
     }
 
-    // Messaging is not different for "async" work as its about how request/response is handled
-    public override Task SendMessage(string name, string message, CancellationToken cancellationToken)
+    public Task SendRequest(string id, string name, string message, CancellationToken cancellationToken)
     {
+        _asyncTransportDummy.Send(id, name, message, cancellationToken);
         return Task.CompletedTask;
-    }
-
-    public override Task SendRequest(string id, string name, string request, CancellationToken cancellationToken)
-    {
-        _asyncTransportDummy.Send(this, id, name, request, cancellationToken);
-        return Task.CompletedTask;
-    }
-
-    public void Handle(string id, string response, CancellationToken cancellationToken)
-    {
-        base.HandleResponse(id, response, cancellationToken);
     }
 }
 
 public class AsyncTransportDummy
 {
+    private readonly IRouter _responseRouter;
+
     public Func<string, string, CancellationToken, Task<string?>> OnReceive { get; set; } = null!;
 
-    internal void Send(TestAsyncTransport testAsyncTransport, string id, string name, string request, CancellationToken cancellationToken)
+    public AsyncTransportDummy(IRouter responseRouter)
+    {
+        _responseRouter = responseRouter;
+    }
+
+    internal void Send(string id, string name, string request, CancellationToken cancellationToken)
     {
         OnReceive?.Invoke(name, request, cancellationToken).ContinueWith(t =>
         {
-            testAsyncTransport.Handle(id, t.Result!, CancellationToken.None);
+            _responseRouter.Receive(id, t.Result!, CancellationToken.None);
         });
     }
 }

@@ -53,7 +53,7 @@ public class TransportDummy
     public Func<string, string, CancellationToken, Task<string?>> OnReceive { get; set; } = null!;
 }
 
-public class TestTransport : ITransportProvider
+public class TestTransport : IRequestForwarder, IMessageForwarder
 {
     private readonly TransportDummy _transportDummy;
 

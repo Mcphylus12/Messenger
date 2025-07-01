@@ -14,10 +14,9 @@ public static class RegistrationExtensions
             return config;
         });
 
-        services.AddTransient<Messenger>();
+        services.AddSingleton<Messenger>();
         services.AddTransient<ISender>(sp => sp.GetRequiredService<Messenger>());
         services.AddTransient<IRouter>(sp => sp.GetRequiredService<Messenger>());
-        services.AddSingleton<AsyncRequestTracker>();
 
         return services;
     }
