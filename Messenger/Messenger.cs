@@ -31,6 +31,7 @@ public class Messenger : ISender, IRouter
         {
             inFlightRequest.SetResult(data);
             _inFlightAsyncRequests.Remove(messagingRoutingKey);
+            return null;
         }
 
         var type = _configuration.GetRequestType(messagingRoutingKey);
