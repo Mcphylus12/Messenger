@@ -5,20 +5,18 @@ namespace Tests;
 
 public class InMemoryTests
 {
-    private readonly Messenger.Messenger _sut;
+    private readonly Messenger.ISender _sut;
     private readonly TestState _testState;
 
     public InMemoryTests()
     {
         _testState = new TestState();
         var sp = new ServiceCollection()
+            .AddMessenger(o => o.Register<TestRequestHandler>().Register<TestMessageHandler>())
             .AddSingleton(_testState)
             .BuildServiceProvider();
 
-        var config = new MessageConfiguration(sp)
-            .Register<TestRequestHandler>()
-            .Register<TestMessageHandler>();
-        _sut = new Messenger.Messenger(config);
+        _sut = sp.GetRequiredService<ISender>();
     }
 
     [Fact]
@@ -76,9 +74,10 @@ public class TestMessageHandler : IHandler<TestMessage>
         _testState = testState;
     }
 
-    public async Task Handle(TestMessage request, CancellationToken cancellationToken)
+    public Task Handle(TestMessage request, CancellationToken cancellationToken)
     {
         _testState.Called = true;
+        return Task.CompletedTask;
     }
 }
 

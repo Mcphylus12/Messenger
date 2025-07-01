@@ -5,32 +5,27 @@ namespace Tests;
 
 public class TransportTests
 {
-    private readonly Messenger.Messenger _outBoundMessenger;
-    private readonly Messenger.Messenger _inBoundMessenger;
+    private readonly ISender _outBoundMessenger;
     private readonly TestState _testState;
-    private readonly TransportDummy _transportDummy;
 
     public TransportTests()
     {
         _testState = new TestState();
-        _transportDummy = new TransportDummy();
+        var transportDummy = new TransportDummy();
 
         var _outboundServices = new ServiceCollection()
-            .AddSingleton(_transportDummy)
+            .AddSingleton(transportDummy)
+            .AddMessenger(o => o.WithTransport<TestTransport>(typeof(TestRequest), typeof(TestMessage)))
             .BuildServiceProvider();
-        var outBoundConfig = new MessageConfiguration(_outboundServices)
-            .WithTransport<TestTransport>(typeof(TestRequest), typeof(TestMessage));
-        _outBoundMessenger = new Messenger.Messenger(outBoundConfig);
+        _outBoundMessenger = _outboundServices.GetRequiredService<ISender>();
 
         var _inboundServices = new ServiceCollection()
             .AddSingleton(_testState)
+            .AddMessenger(o => o.Register<TestRequestHandler>().Register<TestMessageHandler>())
             .BuildServiceProvider();
-        var inBoundConfig = new MessageConfiguration(_inboundServices)
-            .Register<TestRequestHandler>()
-            .Register<TestMessageHandler>();
-        _inBoundMessenger = new Messenger.Messenger(inBoundConfig);
+        var inBoundMessenger = _inboundServices.GetRequiredService<IRouter>();
 
-        _transportDummy.OnReceive = _inBoundMessenger.Receive;
+        transportDummy.OnReceive = inBoundMessenger.Receive;
     }
 
     [Fact]
@@ -74,8 +69,7 @@ public class TestTransport : ITransportProvider
 
     public async Task<string> SendRequest(string name, string request, CancellationToken cancellationToken)
     {
-       
-         var response = await _transportDummy.OnReceive(name, request, cancellationToken);
+        var response = await _transportDummy.OnReceive(name, request, cancellationToken);
 
         return response!;
     }
