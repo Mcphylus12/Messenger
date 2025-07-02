@@ -15,7 +15,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Messenger.InMemory\Messenger.InMemory.csproj" />
     <ProjectReference Include="..\Messenger\Messenger.csproj" />
   </ItemGroup>
 
