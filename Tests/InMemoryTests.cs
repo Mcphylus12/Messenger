@@ -12,7 +12,7 @@ public class InMemoryTests
     {
         _testState = new TestState();
         var sp = new ServiceCollection()
-            .AddMessenger(o => o.Register<TestRequestHandler>().Register<TestMessageHandler>())
+            .AddMessenger(o => o.RegisterAssemblies(typeof(TestRequestHandler).Assembly))
             .AddSingleton(_testState)
             .BuildServiceProvider();
 

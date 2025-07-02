@@ -1,4 +1,5 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
+using System.Reflection;
 using System.Text.Json;
 
 namespace Messenger;
@@ -65,7 +66,7 @@ public class Messenger : ISender, IRouter
 
     public async Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
     {
-        var messagingName = MessageNameAttribute.GetMessagingName(request.GetType());
+        var messagingName = NameAttribute.GetName(request.GetType());
         object? provider = _configuration.GetTransport(messagingName);
 
         if (provider is IRequestForwarder requestForwarder)
@@ -95,7 +96,7 @@ public class Messenger : ISender, IRouter
 
     public async Task Send(IMessage message, CancellationToken cancellationToken = default)
     {
-        var messagingName = MessageNameAttribute.GetMessagingName(message.GetType());
+        var messagingName = NameAttribute.GetName(message.GetType());
         object? provider = _configuration.GetTransport(messagingName);
 
         if (provider is IMessageForwarder messageForwarder)
@@ -119,6 +120,7 @@ public class MessageConfiguration
 {
     private Dictionary<string, Type> _handlers = [];
     private Dictionary<string, Type> _transportConfig = [];
+    private Dictionary<string, Type> _forwarders = [];
     private readonly IServiceProvider _serviceProvider;
 
     public MessageConfiguration(IServiceProvider serviceProvider)
@@ -126,22 +128,35 @@ public class MessageConfiguration
         _serviceProvider = serviceProvider;
     }
 
-    public MessageConfiguration Register<T>()
+    public MessageConfiguration RegisterAssemblies(params Assembly[] assemblies)
     {
-        var interfaces = typeof(T).GetInterfaces();
-
-        foreach (var iinterface in interfaces)
+        foreach (var assembly in assemblies)
         {
-            if (iinterface.Name.StartsWith("IHandler`2"))
+            foreach (var ttype in assembly.GetExportedTypes())
             {
-                _handlers[MessageNameAttribute.GetMessagingName(iinterface.GenericTypeArguments[0])]
-                    = typeof(RequestHandlerWrapper<,,>).MakeGenericType([.. iinterface.GenericTypeArguments, typeof(T)]);
-            }
+                var interfaces = ttype.GetInterfaces();
 
-            if (iinterface.Name.StartsWith("IHandler`1"))
-            {
-                _handlers[MessageNameAttribute.GetMessagingName(iinterface.GenericTypeArguments[0])]
-                    = typeof(MessageHandlerWrapper<,>).MakeGenericType([.. iinterface.GenericTypeArguments, typeof(T)]);
+                foreach (var iinterface in interfaces)
+                {
+                    if (iinterface.Name.StartsWith("IHandler`2"))
+                    {
+                        _handlers[NameAttribute.GetName(iinterface.GenericTypeArguments[0])]
+                            = typeof(RequestHandlerWrapper<,,>).MakeGenericType([.. iinterface.GenericTypeArguments, ttype]);
+                    }
+
+                    if (iinterface.Name.StartsWith("IHandler`1"))
+                    {
+                        _handlers[NameAttribute.GetName(iinterface.GenericTypeArguments[0])]
+                            = typeof(MessageHandlerWrapper<,>).MakeGenericType([.. iinterface.GenericTypeArguments, ttype]);
+                    }
+
+                    if (iinterface.Name.StartsWith(nameof(IMessageForwarder)) || 
+                        iinterface.Name.StartsWith(nameof(IRequestForwarder)) ||
+                        iinterface.Name.StartsWith(nameof(IAsyncRequestForwarder)))
+                    {
+                        _forwarders[NameAttribute.GetName(ttype)] = ttype;
+                    }
+                }
             }
         }
 
@@ -168,16 +183,6 @@ public class MessageConfiguration
         return null;
     }
 
-    public MessageConfiguration WithTransport<TTransportProvider>(params Type[] requestTypes)
-    {
-        foreach (var item in requestTypes)
-        {
-            _transportConfig[MessageNameAttribute.GetMessagingName(item)] = typeof(TTransportProvider);
-        }
-
-        return this;
-    }
-
     internal Type? GetRequestType(string name)
     {
         if (_handlers.TryGetValue(name, out var handlerType))
@@ -186,5 +191,19 @@ public class MessageConfiguration
         }
 
         return null;
+    }
+
+    public void Load(JsonMessagingConfig jsonMessagingConfig)
+    {
+        foreach (var item in jsonMessagingConfig.Forwarders)
+        {
+            if (_forwarders.TryGetValue(item.Key, out var forwarder))
+            {
+                foreach (var messageName in item.Value)
+                {
+                    _transportConfig[messageName] = forwarder;
+                }
+            }
+        }
     }
 }

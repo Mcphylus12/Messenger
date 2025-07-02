@@ -15,13 +15,27 @@ public class TransportTests
 
         var _outboundServices = new ServiceCollection()
             .AddSingleton(transportDummy)
-            .AddMessenger(o => o.WithTransport<TestTransport>(typeof(TestRequest), typeof(TestMessage)))
+            .AddMessenger(o =>
+            {
+                o.RegisterAssemblies(typeof(TestRequestHandler).Assembly);
+                o.Load(new JsonMessagingConfig
+                {
+                    Forwarders = new Dictionary<string, List<string>>
+                    {
+                        [nameof(TestTransport)] = new List<string>
+                        {
+                            nameof(TestRequest),
+                            nameof(TestMessage)
+                        }
+                    }
+                });
+            })
             .BuildServiceProvider();
         _outBoundMessenger = _outboundServices.GetRequiredService<ISender>();
 
         var _inboundServices = new ServiceCollection()
             .AddSingleton(_testState)
-            .AddMessenger(o => o.Register<TestRequestHandler>().Register<TestMessageHandler>())
+            .AddMessenger(o => o.RegisterAssemblies(typeof(TestRequestHandler).Assembly))
             .BuildServiceProvider();
         var inBoundMessenger = _inboundServices.GetRequiredService<IRouter>();
 

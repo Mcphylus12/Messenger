@@ -3,13 +3,13 @@
 namespace Messenger;
 
 [AttributeUsage(AttributeTargets.Class)]
-public class MessageNameAttribute(string Name) : Attribute
+public class NameAttribute(string Name) : Attribute
 {
     public string Name { get; } = Name;
 
-    public static string GetMessagingName(Type t)
+    public static string GetName(Type t)
     {
-        if (t.GetCustomAttribute<MessageNameAttribute>() is { } attr)
+        if (t.GetCustomAttribute<NameAttribute>() is { } attr)
         {
             return attr.Name;
         }
