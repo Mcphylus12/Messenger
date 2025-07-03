@@ -1,6 +1,7 @@
-﻿
-using Demo.Common;
+﻿using Demo.Common;
 using Messenger;
+
+namespace Client;
 
 public class Runner : BackgroundService
 {
@@ -35,45 +36,5 @@ public class Runner : BackgroundService
         });
 
         return Task.CompletedTask;
-    }
-}
-
-public class DemoForwarder : IMessageForwarder, IRequestForwarder, IAsyncRequestForwarder
-{
-    private readonly HttpClient _httpClient;
-
-    public DemoForwarder(HttpClient httpClient)
-    {
-        _httpClient = httpClient;
-    }
-
-    public Task SendMessage(string name, string message, CancellationToken cancellationToken)
-    {
-        return _httpClient.PostAsJsonAsync("http://localhost:8081", new MessagePacket
-        {
-            Data = message,
-            Name = name
-        });
-    }
-
-    public async Task<string> SendRequest(string name, string request, CancellationToken cancellationToken)
-    {
-        var response = await _httpClient.PostAsJsonAsync("http://localhost:8081", new MessagePacket
-        {
-            Data = request,
-            Name = name
-        });
-
-        return (await response.Content.ReadFromJsonAsync<MessagePacket>())!.Data;
-    }
-
-    public Task SendRequest(string id, string name, string message, CancellationToken cancellationToken)
-    {
-        return _httpClient.PostAsJsonAsync("http://localhost:8081", new MessagePacket
-        {
-            Data = message,
-            Name = name,
-            Id = id
-        });
     }
 }
